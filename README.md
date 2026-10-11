@@ -66,3 +66,31 @@ npm start       # serves the API and client/dist from one process
 ```
 
 `npm start` sets `NODE_ENV` with POSIX shell syntax, so on Windows run it from Git Bash or WSL.
+
+## Docker
+
+Runs the app and its own Postgres 16, with the built client served by the server on port 3001.
+
+1. Create a `.env` file in the repo root (next to `docker-compose.yml`) with your OpenAI key:
+
+   ```sh
+   cp .env.example .env
+   ```
+
+2. Build and start both containers:
+
+   ```sh
+   docker compose up --build
+   ```
+
+3. In a second terminal, create the tables and load the demo data. Needed on the first run, and it wipes any existing data:
+
+   ```sh
+   docker compose exec app npm run db:setup
+   ```
+
+4. Open http://localhost:3001.
+
+The database lives in the `pgdata` volume, so it survives restarts. `docker compose down -v` deletes it.
+
+The image uses Node 22. To build with a different major version: `docker compose build --build-arg NODE_VERSION=24`.
