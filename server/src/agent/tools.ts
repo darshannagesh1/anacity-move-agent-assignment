@@ -12,7 +12,7 @@ import {
 } from "../repo";
 import { addDays, computeFees, getRulesFor, isValidDate, weekdayOf, type RuleResult } from "../rules/engine";
 import { evaluate } from "../services/evaluation";
-import type { CommunityConfig, ExtraField } from "../types";
+import type { CommunityConfig, ExtraField, RequestType, ResidentType } from "../types";
 
 export interface ToolContext { requestId: number; communityId: string }
 export interface ToolOutcome { result: unknown; requestChanged: boolean }
@@ -177,16 +177,53 @@ async function updateRequest(ctx: ToolContext, args: unknown) {
     throw new ToolError("No fields were provided to update");
   }
 
-  await updateRequestFields(ctx.requestId, update);
-  await addEvent(ctx.requestId, "agent", "fields_updated", { fields: { ...input, data: update.data } });
+  // a full slot is never saved: the model has to offer what's free and let the resident pick
+  const rejection = await rejectFullSlot(ctx, config, {
+    type: input.type ?? request.type,
+    residentType: input.residentType ?? request.residentType,
+    moveDate: input.moveDate ?? request.moveDate,
+    slot: input.slot,
+  });
+  if (rejection) update.slot = undefined;
+
+  const hasChanges = Object.values(update).some((value) => value !== undefined);
+  if (hasChanges) {
+    await updateRequestFields(ctx.requestId, update);
+    await addEvent(ctx.requestId, "agent", "fields_updated", {
+      fields: { ...input, slot: update.slot, data: update.data },
+    });
+  }
 
   const [saved, evaluation] = await Promise.all([getRequest(ctx.requestId), evaluate(ctx.requestId)]);
   return {
-    saved: true,
+    saved: hasChanges,
+    ...rejection,
     moveDate: withWeekday(saved?.moveDate ?? null),
     pending: brief(evaluation.results, "pending"),
     failed: brief(evaluation.results, "fail"),
     canSubmit: evaluation.canSubmit,
+  };
+}
+
+// Same occupancy count evaluate() uses, excluding this request. Null when the slot can be saved.
+async function rejectFullSlot(
+  ctx: ToolContext,
+  config: CommunityConfig,
+  wanted: { type: RequestType | null; residentType: ResidentType | null; moveDate: string | null; slot?: string },
+): Promise<{ slotRejected: string; availableSlots: string[] } | null> {
+  const { type, moveDate, slot } = wanted;
+  if (!slot || !type || !moveDate) return null;
+  const rules = getRulesFor(config, type, wanted.residentType);
+  // an unknown slot is still saved, so the slot_valid rule can explain it
+  if (!rules.slots.includes(slot)) return null;
+
+  const booked = await Promise.all(
+    rules.slots.map((s) => getSlotOccupancy(ctx.communityId, moveDate, s, ctx.requestId)),
+  );
+  if (booked[rules.slots.indexOf(slot)] < rules.maxMovesPerSlot) return null;
+  return {
+    slotRejected: `${slot} is full on ${withWeekday(moveDate)}`,
+    availableSlots: rules.slots.filter((_, i) => booked[i] < rules.maxMovesPerSlot),
   };
 }
 

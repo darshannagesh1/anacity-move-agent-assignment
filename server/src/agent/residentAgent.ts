@@ -34,12 +34,21 @@ export async function runResidentAgent(opts: {
       tools: toolDefinitions,
       temperature: 0.3,
       stream: true,
+      stream_options: { include_usage: true },
     });
 
     let content = "";
     const toolCalls: { id: string; name: string; args: string }[] = [];
 
     for await (const chunk of stream) {
+      // the last chunk has no choices, only token usage (evals add these up)
+      if (chunk.usage) {
+        send("usage", {
+          promptTokens: chunk.usage.prompt_tokens,
+          completionTokens: chunk.usage.completion_tokens,
+          totalTokens: chunk.usage.total_tokens,
+        });
+      }
       const delta = chunk.choices[0]?.delta;
       if (!delta) continue;
 

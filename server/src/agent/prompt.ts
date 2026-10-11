@@ -1,6 +1,7 @@
 import { todayIST } from "../lib/time";
-import { addDays, weekdayOf } from "../rules/engine";
-import { getCommunity, getRequest, getResident } from "../repo";
+import { addDays, earliestAllowedDate, getRulesFor, weekdayOf } from "../rules/engine";
+import { getCommunity, getRequest, getResident, getSlotOccupancy, type RequestRecord } from "../repo";
+import type { CommunityConfig } from "../types";
 
 const TYPE_LABELS = { move_in: "move-in", move_out: "move-out" } as const;
 
@@ -11,6 +12,27 @@ function upcomingCalendar(today: string, days = 21): string {
     const date = addDays(today, i);
     return `${weekdayOf(date)} ${date}`;
   }).join(", ");
+}
+
+// "Wed 2026-10-14", same format as the calendar
+function withWeekday(date: string): string {
+  return `${weekdayOf(date)} ${date}`;
+}
+
+// Only once there is a type and a date to count against. Same occupancy count evaluate() uses,
+// excluding this request, so the model reads availability instead of having to ask for it.
+async function slotAvailabilityLine(request: RequestRecord, config: CommunityConfig): Promise<string[]> {
+  const { type, moveDate } = request;
+  if (!type || !moveDate) return [];
+  const rules = getRulesFor(config, type, request.residentType);
+  const slots = await Promise.all(
+    rules.slots.map(async (slot) => {
+      const booked = await getSlotOccupancy(request.communityId, moveDate, slot, request.id);
+      const full = booked >= rules.maxMovesPerSlot;
+      return `${slot} ${full ? "FULL" : "available"} (${booked} of ${rules.maxMovesPerSlot} booked)`;
+    }),
+  );
+  return [`Slot availability on ${withWeekday(moveDate)}: ${slots.join(", ")}`];
 }
 
 export async function buildSystemPrompt(requestId: number): Promise<string> {
@@ -38,6 +60,9 @@ export async function buildSystemPrompt(requestId: number): Promise<string> {
     `You are the move-in/move-out assistant for ${community.name} on ANACITY.`,
     `You are helping ${resident.name}. Today is ${weekdayOf(today)}, ${today} (IST).`,
     `Calendar for the next 3 weeks: ${upcomingCalendar(today)}`,
+    `Earliest allowed move-in date: ${withWeekday(earliestAllowedDate(today, community.config.moveIn))}`,
+    `Earliest allowed move-out date: ${withWeekday(earliestAllowedDate(today, community.config.moveOut))}`,
+    ...(await slotAvailabilityLine(request, community.config)),
     "",
     `Your job: help the resident complete a ${request.type ? TYPE_LABELS[request.type] : "move-in or move-out"} request.`,
     `Current request: ${fields}`,
@@ -65,6 +90,10 @@ export async function buildSystemPrompt(requestId: number): Promise<string> {
     '- After saving a date, always confirm it back with the weekday, e.g. "Sat, 17 Oct". If the resident\'s phrase could mean two dates, ask which one.',
     "- Use plain text. Never use markdown symbols like ** or #. Simple numbered lines are fine.",
     "- Before offering time slots, call check_slot_availability for that date and only offer slots with space.",
+    "- Never change a detail the resident already chose (date, slot, flat, etc.) without their explicit agreement. If their choice is unavailable, explain why, offer alternatives, and wait for them to pick one.",
+    "- Never say you have saved or noted something unless update_request succeeded in this same turn.",
+    "- Never calculate notice periods or earliest dates yourself. Use the earliest allowed dates above or the tool results.",
+    "- If the resident asks for a slot that is FULL, tell them it is full and offer the available ones. Never offer a FULL slot.",
   );
   return lines.join("\n");
 }

@@ -22,6 +22,12 @@ interface Turn {
   activity: string | null
 }
 
+// The model sometimes uses markdown despite the prompt, and bubbles show plain text. Run on the
+// whole reply, not per token: a "**" can arrive split across two tokens.
+function stripMarkdown(text: string): string {
+  return text.replace(/\*\*|__/g, '').replace(/^#+\s*/gm, '')
+}
+
 function Bubble({ role, children }: { role: 'user' | 'assistant'; children: ReactNode }) {
   const isUser = role === 'user'
   return (
@@ -164,7 +170,7 @@ export function Chat({ request, residentName }: { request: MoveRequest; resident
             </p>
           ) : (
             <Bubble key={i} role={message.role}>
-              {message.content}
+              {message.role === 'assistant' ? stripMarkdown(message.content) : message.content}
             </Bubble>
           ),
         )}
@@ -172,7 +178,7 @@ export function Chat({ request, residentName }: { request: MoveRequest; resident
         {turn && (
           <>
             <Bubble role="user">{turn.userText}</Bubble>
-            {turn.reply && <Bubble role="assistant">{turn.reply}</Bubble>}
+            {turn.reply && <Bubble role="assistant">{stripMarkdown(turn.reply)}</Bubble>}
             <p className="flex items-center gap-2 text-xs text-neutral-500">
               <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
               {turn.activity ?? (turn.reply ? 'Typing…' : 'Thinking…')}

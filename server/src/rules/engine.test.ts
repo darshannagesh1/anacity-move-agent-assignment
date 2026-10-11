@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommunityConfig } from "../types";
-import { canSubmit, computeFees, evaluateRequest, type RuleInput, type RuleResult } from "./engine";
+import { canSubmit, computeFees, earliestAllowedDate, evaluateRequest, type RuleInput, type RuleResult } from "./engine";
 import { greenMeadows, lakeview } from "./fixtures";
 
 // 2026-10-12 is a Monday.
@@ -210,5 +210,19 @@ describe("computeFees", () => {
   it("charges nothing on move-out", () => {
     expect(computeFees(greenMeadows, "move_out", "tenant")).toEqual([]);
     expect(computeFees(lakeview, "move_out", "owner")).toEqual([]);
+  });
+});
+
+describe("earliestAllowedDate", () => {
+  it("is today plus the notice period when that day is allowed", () => {
+    expect(earliestAllowedDate(today, greenMeadows.moveIn)).toBe(THURSDAY); // Mon + 3
+    expect(earliestAllowedDate(today, lakeview.moveIn)).toBe(TOMORROW); // Mon + 1
+  });
+
+  it("moves forward to the next allowed day when today plus notice is not allowed", () => {
+    // Sun 2026-10-11 + 7 is Sun 2026-10-18; Green Meadows has no Sunday moves
+    expect(earliestAllowedDate("2026-10-11", greenMeadows.moveOut)).toBe("2026-10-19");
+    // Lakeview allows every day, so the same input stays on the Sunday
+    expect(earliestAllowedDate("2026-10-15", lakeview.moveOut)).toBe(SUNDAY);
   });
 });

@@ -1,96 +1,76 @@
-# anacity-move-agent
+# ANACITY Move Assistant
 
-Move-in / move-out agentic workflow for residential communities.
+A move-in / move-out assistant for residential communities. A resident plans a move by chatting with an AI agent, a rule engine checks the request against that community's rules, and an admin decides with an AI-written assessment to help.
 
-- `server/`: Node 20 + Express + TypeScript (run directly with `tsx`, no build step)
-- `client/`: React + TypeScript + Vite + Tailwind
+- **Live:** https://anacity-move-agent-assignment-1.onrender.com/
+- **How it works and why:** [docs/EXPLANATION.md](docs/EXPLANATION.md)
+- **Agent evals:** [docs/EVALS.md](docs/EVALS.md)
 
-## Prerequisites
+The live app is on a free tier, so the first load after a quiet period takes about 50 seconds while the server wakes up.
 
-- Node 20.11 or newer
-- A Postgres database (Neon) and an OpenAI API key
+## Try it
 
-## Local setup
+No login. Pick a persona on the home page.
 
-1. Install dependencies:
+**As a resident**
+1. Choose Green Meadows and Priya Sharma, then start a new request.
+2. Type something like "I'm a tenant moving into A-101 next Saturday afternoon, 3 of us".
+3. Watch the panel on the right fill in. Upload the four documents with the buttons there (any file works, only the name is recorded).
+4. Press Submit when the checklist is complete.
 
-   ```sh
-   cd server && npm install
-   cd ../client && npm install
-   ```
+**As an admin**
+1. Go back to the home page, choose Admin and Green Meadows.
+2. Open the request. Read the agent's assessment, then approve, reject or request info.
 
-2. Create the server env file and fill in the values:
+**Things worth trying**
+- A date that breaks the rules: "tomorrow", or a Sunday in Green Meadows.
+- The same request in Lakeview Residency (try Rohan Mehta). It has shorter notice, Sunday moves, and asks about pets.
+- A move-out from flat B-102 in Green Meadows, which has pending dues.
+- Request info as admin, then reopen the request as the resident and resubmit.
 
-   ```sh
-   cd server
-   cp .env.example .env
-   ```
+## Run locally with npm
 
-   | Variable         | Description                         |
-   | ---------------- | ----------------------------------- |
-   | `OPENAI_API_KEY` | OpenAI API key                      |
-   | `OPENAI_MODEL`   | Model name, defaults to gpt-4o-mini |
-   | `DATABASE_URL`   | Neon Postgres connection string     |
-   | `PORT`           | Server port, defaults to 3001       |
+Needs Node 22 or newer, a Postgres database (Neon works) and an OpenAI API key.
 
-3. Start the server (terminal 1), on http://localhost:3001:
+```sh
+cd server
+npm install
+cp .env.example .env      # fill in OPENAI_API_KEY and DATABASE_URL
+npm run db:setup          # creates tables and demo data, wipes existing data
+npm run dev               # API on http://localhost:3001
+```
 
-   ```sh
-   cd server
-   npm run dev
-   ```
+In a second terminal:
 
-4. Start the client (terminal 2), on http://localhost:5173:
+```sh
+cd client
+npm install
+npm run dev               # app on http://localhost:5173
+```
 
-   ```sh
-   cd client
-   npm run dev
-   ```
+## Run locally with Docker
 
-   The Vite dev server proxies `/api` to the server, so the page should show `{"ok":true}` from `/api/health`.
+Starts the app and its own Postgres. Nothing else to install.
 
-## Other commands
+```sh
+cp .env.example .env      # in the repo root, add your OPENAI_API_KEY
+docker compose up --build
+```
+
+In a second terminal, on the first run:
+
+```sh
+docker compose exec app npm run db:setup
+```
+
+Then open http://localhost:3001.
+
+## Tests and evals
 
 Run from `server/`:
 
-- `npm test`: run tests with Vitest
-- `npm run typecheck`: type check with `tsc --noEmit`
-
-## Production
-
-From the repo root:
-
 ```sh
-npm run build   # installs and builds the client, installs server deps
-npm start       # serves the API and client/dist from one process
+npm test                      # unit tests
+npm run typecheck
+npm run eval -- --repeat 3    # agent evals, calls OpenAI and uses temporary data
 ```
-
-`npm start` sets `NODE_ENV` with POSIX shell syntax, so on Windows run it from Git Bash or WSL.
-
-## Docker
-
-Runs the app and its own Postgres 16, with the built client served by the server on port 3001.
-
-1. Create a `.env` file in the repo root (next to `docker-compose.yml`) with your OpenAI key:
-
-   ```sh
-   cp .env.example .env
-   ```
-
-2. Build and start both containers:
-
-   ```sh
-   docker compose up --build
-   ```
-
-3. In a second terminal, create the tables and load the demo data. Needed on the first run, and it wipes any existing data:
-
-   ```sh
-   docker compose exec app npm run db:setup
-   ```
-
-4. Open http://localhost:3001.
-
-The database lives in the `pgdata` volume, so it survives restarts. `docker compose down -v` deletes it.
-
-The image uses Node 22. To build with a different major version: `docker compose build --build-arg NODE_VERSION=24`.

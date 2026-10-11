@@ -161,7 +161,10 @@ residentRouter.post("/requests/:id/chat", chatLimiter, async (req, res) => {
       requestId: request.id,
       communityId: request.communityId,
       userMessage: body.data.message,
-      send,
+      // token usage is for the eval runner, not the browser
+      send: (event, data) => {
+        if (event !== "usage") send(event, data);
+      },
     });
   } catch (err) {
     console.error(`Chat failed for request ${request.id}:`, err);

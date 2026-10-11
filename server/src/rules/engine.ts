@@ -49,6 +49,14 @@ export function weekdayOf(date: string): Weekday {
   return WEEKDAYS[new Date(date + "T00:00:00Z").getUTCDay()];
 }
 
+// today + notice, pushed forward to the next allowed weekday
+export function earliestAllowedDate(today: string, rules: Pick<MoveRules, "noticeDays" | "allowedDays">): string {
+  let date = addDays(today, rules.noticeDays);
+  // 7 tries covers every weekday, so a config with no allowed days can't loop forever
+  for (let i = 0; i < 7 && !rules.allowedDays.includes(weekdayOf(date)); i++) date = addDays(date, 1);
+  return date;
+}
+
 function result(id: string, label: string, status: RuleStatus, detail: string, blocking = true): RuleResult {
   return { id, label, status, detail, blocking };
 }
